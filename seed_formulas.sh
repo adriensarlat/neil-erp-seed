@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
-# seed_formulas.sh — Création des formations et formules pour Neil ERP
+# seed_formulas.sh — Création des formations, formules, étapes, échéanciers,
+#                    remises et frais exceptionnels pour Neil ERP
 # =============================================================================
 set -euo pipefail
 
@@ -38,17 +39,40 @@ create_formula() {
 
 add_set() {
   local formula_id="$1" name="$2" min="$3" max="$4" order="$5" formation_ids="$6"
-  # formation_ids: comma separated, ex: "10" or "18,17"
   local to_patch=""
   IFS=',' read -ra IDS <<< "$formation_ids"
   for fid in "${IDS[@]}"; do
     [ -n "$to_patch" ] && to_patch+=","
     to_patch+="{\"formation_id\":$fid}"
   done
-
   curl -s -X POST "$API/formulas/$formula_id/sets" \
     -H "$KEY" -H 'Content-Type: application/json' \
     -d "{\"name\":\"$name\",\"min\":$min,\"max\":$max,\"order\":$order,\"formations\":{\"to_patch\":[$to_patch]}}" > /dev/null
+}
+
+get_step_ids() {
+  # Retourne les step IDs d'une formule, séparés par des espaces
+  local formula_id="$1"
+  curl -s "$API/formulas/$formula_id" -H "$KEY" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+for s in sorted(d.get('steps', []), key=lambda x: x['order']):
+    print(s['id'], end=' ')
+" 2>/dev/null
+}
+
+add_discount() {
+  local fid="$1" name="$2" type="$3" amount="$4"
+  curl -s -X POST "$API/formulas/$fid/discounts" \
+    -H "$KEY" -H 'Content-Type: application/json' \
+    -d "{\"name\":\"$name\",\"type\":\"$type\",\"amount\":$amount}" > /dev/null
+}
+
+add_charge() {
+  local fid="$1" name="$2" type="$3" amount="$4"
+  curl -s -X POST "$API/formulas/$fid/charges" \
+    -H "$KEY" -H 'Content-Type: application/json' \
+    -d "{\"name\":\"$name\",\"type\":\"$type\",\"amount\":$amount}" > /dev/null
 }
 
 # =============================================================================
@@ -88,55 +112,290 @@ echo "Formation Stage Recherche Création: ID=$F_STAGE_CREA"
 echo ""
 
 # =============================================================================
-# 2. FORMULES
+# 2. FORMULES + SETS
 # =============================================================================
 echo "=== Création des formules ==="
 
-# --- Formule 1 : Licence Sciences L2-L3 (formation sur 2 ans) ---
+# --- Formule 1 : Licence Sciences L2-L3 (formation sur 2 ans, 8500€) ---
 FM1=$(create_formula "Licence Sciences — Cycle L2-L3" 3 1 2025 2027 "2025-06-01" "2027-06-30" "[23,24]" 850000)
 echo "Formule Licence Sciences L2-L3: ID=$FM1"
 add_set "$FM1" "Tronc commun" 1 1 1 "$F_TRONC_L2L3"
-echo "  + Set Tronc commun → Formation $F_TRONC_L2L3"
 
-# --- Formule 2 : Prépa Scientifique Intensive (2 trimestres) ---
+# --- Formule 2 : Prépa Scientifique Intensive (2 trimestres, 4500€) ---
 FM2=$(create_formula "Prépa Scientifique Intensive" 3 1 2025 2026 "2025-06-01" "2026-03-31" "[21]" 450000)
 echo "Formule Prépa Intensive: ID=$FM2"
 add_set "$FM2" "Trimestre 1 — Fondamentaux" 1 1 1 "$F_PREPA_T1"
-echo "  + Set T1 → Formation $F_PREPA_T1"
 add_set "$FM2" "Trimestre 2 — Approfondissement" 1 1 2 "$F_PREPA_T2"
-echo "  + Set T2 → Formation $F_PREPA_T2"
 
-# --- Formule 3 : Stage Recherche en Laboratoire (commercialisable) ---
+# --- Formule 3 : Stage Recherche en Laboratoire (commercialisable, 1800€) ---
 FM3=$(create_formula "Stage Recherche en Laboratoire" 3 1 2025 2026 "2025-06-01" "2026-06-30" "[25,26]" 180000 true)
 echo "Formule Stage Labo (salable): ID=$FM3"
 add_set "$FM3" "Stage obligatoire" 1 1 1 "$F_STAGE_LABO"
-echo "  + Set Stage → Formation $F_STAGE_LABO"
 
-# --- Formule 4 : Licence Arts Plastiques (théorie + pratique) ---
+# --- Formule 4 : Licence Arts Plastiques (théorie + pratique, 6500€) ---
 FM4=$(create_formula "Licence Arts Plastiques — Cycle complet" 5 2 2025 2026 "2025-06-01" "2026-06-30" "[22,23,24]" 650000)
 echo "Formule Licence Arts: ID=$FM4"
 add_set "$FM4" "Enseignements théoriques" 1 1 1 "$F_HIST_ART"
-echo "  + Set Théorie → Formation $F_HIST_ART"
 add_set "$FM4" "Ateliers pratiques" 1 1 2 "$F_ATELIERS"
-echo "  + Set Pratique → Formation $F_ATELIERS"
 
-# --- Formule 5 : Master Création Contemporaine (tronc commun + options dont stage) ---
+# --- Formule 5 : Master Création Contemporaine (options dont stage, 7800€) ---
 FM5=$(create_formula "Master Création Contemporaine" 6 2 2025 2026 "2025-06-01" "2026-06-30" "[25,26]" 780000)
 echo "Formule Master Création: ID=$FM5"
 add_set "$FM5" "Tronc commun" 1 1 1 "$F_MASTER_TC"
-echo "  + Set Tronc commun → Formation $F_MASTER_TC"
 add_set "$FM5" "Options" 1 2 2 "$F_STAGE_CREA,$F_WORKSHOP"
-echo "  + Set Options (min:1 max:2) → Formations $F_STAGE_CREA + $F_WORKSHOP"
+
+echo ""
+
+# =============================================================================
+# 3. ÉTAPES D'INSCRIPTION
+# =============================================================================
+echo "=== Mise à jour des étapes d'inscription ==="
+
+# --- Formule 1 : Licence Sciences (3 étapes) ---
+# Candidature (frais 150€ déductibles) → Admission (commission + acompte 1000€) → Inscription
+echo "Formule $FM1: Candidature → Admission → Inscription"
+curl -s -X PATCH "$API/formulas/$FM1/steps" \
+  -H "$KEY" -H 'Content-Type: application/json' \
+  -d '{
+    "steps": [
+      {"name":"Candidature","description":"Dossier de candidature et pièces justificatives","is_subscription":false,"order":1,"has_charge":true,"charge":15000,"charge_label":"Frais de dossier","charge_is_deductible":true,"charge_is_due":true,"files":[{"name":"CV"},{"name":"Lettre de motivation"},{"name":"Relevés de notes"}]},
+      {"name":"Admission","description":"Examen du dossier par la commission pédagogique","is_subscription":false,"order":2,"commission":true,"has_advance":true,"advance":100000,"advance_label":"Acompte de réservation"},
+      {"name":"Inscription définitive","description":"Signature du contrat et inscription administrative","is_subscription":true,"order":3,"files":[{"name":"Pièce d identité"},{"name":"Attestation CVEC"},{"name":"Photo d identité"}]}
+    ]
+  }' > /dev/null
+
+# --- Formule 2 : Prépa Scientifique (3 étapes) ---
+# Candidature (frais 80€) → Confirmation (acompte 500€) → Inscription
+echo "Formule $FM2: Candidature → Confirmation → Inscription"
+curl -s -X PATCH "$API/formulas/$FM2/steps" \
+  -H "$KEY" -H 'Content-Type: application/json' \
+  -d '{
+    "steps": [
+      {"name":"Candidature","description":"Test de niveau et dossier scolaire","is_subscription":false,"order":1,"has_charge":true,"charge":8000,"charge_label":"Frais de candidature","charge_is_deductible":true,"charge_is_due":true,"files":[{"name":"Bulletins scolaires"},{"name":"Résultats bac"}]},
+      {"name":"Confirmation","description":"Confirmation de place et versement de l acompte","is_subscription":false,"order":2,"has_advance":true,"advance":50000,"advance_label":"Acompte de confirmation"},
+      {"name":"Inscription","description":"Inscription définitive et choix du campus","is_subscription":true,"order":3,"files":[{"name":"Pièce d identité"},{"name":"Attestation CVEC"}]}
+    ]
+  }' > /dev/null
+
+# --- Formule 3 : Stage Recherche Labo (3 étapes) ---
+# Pré-inscription (frais 50€ non déductibles) → Validation scientifique (commission) → Inscription
+echo "Formule $FM3: Pré-inscription → Validation → Inscription"
+curl -s -X PATCH "$API/formulas/$FM3/steps" \
+  -H "$KEY" -H 'Content-Type: application/json' \
+  -d '{
+    "steps": [
+      {"name":"Pré-inscription","description":"Choix du laboratoire et dépôt de candidature","is_subscription":false,"order":1,"has_charge":true,"charge":5000,"charge_label":"Frais de traitement","charge_is_deductible":false,"charge_is_due":true,"files":[{"name":"Projet de recherche"},{"name":"CV académique"}]},
+      {"name":"Validation scientifique","description":"Accord du directeur de laboratoire","is_subscription":false,"order":2,"commission":true},
+      {"name":"Inscription au stage","description":"Paiement et convention de stage","is_subscription":true,"order":3,"files":[{"name":"Convention de stage signée"}]}
+    ]
+  }' > /dev/null
+
+# --- Formule 4 : Licence Arts Plastiques (3 étapes) ---
+# Candidature artistique (frais 120€) → Jury (commission + acompte 800€) → Inscription
+echo "Formule $FM4: Candidature artistique → Jury → Inscription"
+curl -s -X PATCH "$API/formulas/$FM4/steps" \
+  -H "$KEY" -H 'Content-Type: application/json' \
+  -d '{
+    "steps": [
+      {"name":"Candidature artistique","description":"Soumission du dossier artistique (portfolio) et entretien","is_subscription":false,"order":1,"has_charge":true,"charge":12000,"charge_label":"Frais de candidature","charge_is_deductible":true,"charge_is_due":true,"files":[{"name":"Portfolio artistique"},{"name":"Lettre de motivation"},{"name":"Bulletins scolaires"}]},
+      {"name":"Jury d admission","description":"Passage devant le jury artistique","is_subscription":false,"order":2,"commission":true,"has_advance":true,"advance":80000,"advance_label":"Acompte de réservation"},
+      {"name":"Inscription administrative","description":"Finalisation de l inscription et choix des ateliers","is_subscription":true,"order":3,"files":[{"name":"Pièce d identité"},{"name":"Attestation CVEC"},{"name":"Photo d identité"},{"name":"Attestation assurance"}]}
+    ]
+  }' > /dev/null
+
+# --- Formule 5 : Master Création Contemporaine (4 étapes) ---
+# Candidature (frais 150€) → Entretien/commission (acompte 1200€) → Choix options → Inscription
+echo "Formule $FM5: Candidature → Entretien → Choix options → Inscription"
+curl -s -X PATCH "$API/formulas/$FM5/steps" \
+  -H "$KEY" -H 'Content-Type: application/json' \
+  -d '{
+    "steps": [
+      {"name":"Candidature","description":"Dossier académique, portfolio et projet de recherche","is_subscription":false,"order":1,"has_charge":true,"charge":15000,"charge_label":"Frais de dossier","charge_is_deductible":true,"charge_is_due":true,"files":[{"name":"Portfolio"},{"name":"Projet de recherche"},{"name":"CV"},{"name":"Diplômes"}]},
+      {"name":"Entretien et commission","description":"Entretien individuel et délibération de la commission","is_subscription":false,"order":2,"commission":true,"has_advance":true,"advance":120000,"advance_label":"Acompte d admission"},
+      {"name":"Choix des options","description":"Sélection des formations optionnelles","is_subscription":false,"order":3},
+      {"name":"Inscription définitive","description":"Validation administrative et signature du contrat","is_subscription":true,"order":4,"files":[{"name":"Pièce d identité"},{"name":"Attestation CVEC"},{"name":"Attestation assurance"},{"name":"RIB"}]}
+    ]
+  }' > /dev/null
+
+echo ""
+
+# =============================================================================
+# 4. ÉCHÉANCIERS DE PAIEMENT
+# =============================================================================
+echo "=== Ajout des échéanciers de paiement ==="
+
+# Récupérer les step IDs (subscription step = dernier) pour chaque formule
+FM1_STEPS=($(get_step_ids "$FM1"))
+FM2_STEPS=($(get_step_ids "$FM2"))
+FM3_STEPS=($(get_step_ids "$FM3"))
+FM4_STEPS=($(get_step_ids "$FM4"))
+FM5_STEPS=($(get_step_ids "$FM5"))
+
+FM1_SUB=${FM1_STEPS[-1]}  # Dernier step = subscription
+FM2_SUB=${FM2_STEPS[-1]}
+FM3_SUB=${FM3_STEPS[-1]}
+FM4_SUB=${FM4_STEPS[-1]}
+FM5_SUB=${FM5_STEPS[-1]}
+
+# --- Formule 1 : Licence Sciences (8500€) → Comptant / 3x / 10 mensualités ---
+echo "Formule $FM1: 3 échéanciers (comptant, 3x, 10 mensualités)"
+curl -s -X PATCH "$API/formulas/$FM1" \
+  -H "$KEY" -H 'Content-Type: application/json' \
+  -d "{
+    \"schedule_templates\": [
+      {\"name\":\"Paiement comptant\",\"steps\":{\"$FM1_SUB\":[
+        {\"due_date\":\"2025-09-15T00:00:00.000Z\",\"label\":\"Solde intégral\",\"amount\":850000,\"charge_type\":\"payment\"}
+      ]}},
+      {\"name\":\"Paiement en 3 fois\",\"steps\":{\"$FM1_SUB\":[
+        {\"due_date\":\"2025-09-15T00:00:00.000Z\",\"label\":\"1er versement\",\"amount\":284000,\"charge_type\":\"payment\"},
+        {\"due_date\":\"2025-12-15T00:00:00.000Z\",\"label\":\"2e versement\",\"amount\":283000,\"charge_type\":\"payment\"},
+        {\"due_date\":\"2026-03-15T00:00:00.000Z\",\"label\":\"3e versement\",\"amount\":283000,\"charge_type\":\"payment\"}
+      ]}},
+      {\"name\":\"10 mensualités\",\"steps\":{\"$FM1_SUB\":[
+        {\"due_date\":\"2025-09-15T00:00:00.000Z\",\"label\":\"Mensualité 1\",\"amount\":85000,\"charge_type\":\"payment\"},
+        {\"due_date\":\"2025-10-15T00:00:00.000Z\",\"label\":\"Mensualité 2\",\"amount\":85000,\"charge_type\":\"payment\"},
+        {\"due_date\":\"2025-11-15T00:00:00.000Z\",\"label\":\"Mensualité 3\",\"amount\":85000,\"charge_type\":\"payment\"},
+        {\"due_date\":\"2025-12-15T00:00:00.000Z\",\"label\":\"Mensualité 4\",\"amount\":85000,\"charge_type\":\"payment\"},
+        {\"due_date\":\"2026-01-15T00:00:00.000Z\",\"label\":\"Mensualité 5\",\"amount\":85000,\"charge_type\":\"payment\"},
+        {\"due_date\":\"2026-02-15T00:00:00.000Z\",\"label\":\"Mensualité 6\",\"amount\":85000,\"charge_type\":\"payment\"},
+        {\"due_date\":\"2026-03-15T00:00:00.000Z\",\"label\":\"Mensualité 7\",\"amount\":85000,\"charge_type\":\"payment\"},
+        {\"due_date\":\"2026-04-15T00:00:00.000Z\",\"label\":\"Mensualité 8\",\"amount\":85000,\"charge_type\":\"payment\"},
+        {\"due_date\":\"2026-05-15T00:00:00.000Z\",\"label\":\"Mensualité 9\",\"amount\":85000,\"charge_type\":\"payment\"},
+        {\"due_date\":\"2026-06-15T00:00:00.000Z\",\"label\":\"Mensualité 10\",\"amount\":85000,\"charge_type\":\"payment\"}
+      ]}}
+    ]
+  }" > /dev/null
+
+# --- Formule 2 : Prépa Scientifique (4500€) → Comptant / 2x par trimestre ---
+echo "Formule $FM2: 2 échéanciers (comptant, 2x par trimestre)"
+curl -s -X PATCH "$API/formulas/$FM2" \
+  -H "$KEY" -H 'Content-Type: application/json' \
+  -d "{
+    \"schedule_templates\": [
+      {\"name\":\"Paiement comptant\",\"steps\":{\"$FM2_SUB\":[
+        {\"due_date\":\"2025-09-01T00:00:00.000Z\",\"label\":\"Solde intégral\",\"amount\":450000,\"charge_type\":\"payment\"}
+      ]}},
+      {\"name\":\"Paiement en 2 fois (par trimestre)\",\"steps\":{\"$FM2_SUB\":[
+        {\"due_date\":\"2025-09-01T00:00:00.000Z\",\"label\":\"1er versement (T1)\",\"amount\":225000,\"charge_type\":\"payment\"},
+        {\"due_date\":\"2026-01-05T00:00:00.000Z\",\"label\":\"2e versement (T2)\",\"amount\":225000,\"charge_type\":\"payment\"}
+      ]}}
+    ]
+  }" > /dev/null
+
+# --- Formule 3 : Stage Recherche (1800€) → Paiement unique ---
+echo "Formule $FM3: 1 échéancier (paiement unique)"
+curl -s -X PATCH "$API/formulas/$FM3" \
+  -H "$KEY" -H 'Content-Type: application/json' \
+  -d "{
+    \"schedule_templates\": [
+      {\"name\":\"Paiement unique\",\"steps\":{\"$FM3_SUB\":[
+        {\"due_date\":\"2025-09-15T00:00:00.000Z\",\"label\":\"Frais de stage\",\"amount\":180000,\"charge_type\":\"payment\"}
+      ]}}
+    ]
+  }" > /dev/null
+
+# --- Formule 4 : Licence Arts (6500€) → Comptant / 3x / 8 mensualités ---
+echo "Formule $FM4: 3 échéanciers (comptant, 3x, 8 mensualités)"
+curl -s -X PATCH "$API/formulas/$FM4" \
+  -H "$KEY" -H 'Content-Type: application/json' \
+  -d "{
+    \"schedule_templates\": [
+      {\"name\":\"Paiement comptant\",\"steps\":{\"$FM4_SUB\":[
+        {\"due_date\":\"2025-09-15T00:00:00.000Z\",\"label\":\"Solde intégral\",\"amount\":650000,\"charge_type\":\"payment\"}
+      ]}},
+      {\"name\":\"Paiement en 3 fois\",\"steps\":{\"$FM4_SUB\":[
+        {\"due_date\":\"2025-09-15T00:00:00.000Z\",\"label\":\"1er versement\",\"amount\":217000,\"charge_type\":\"payment\"},
+        {\"due_date\":\"2025-12-15T00:00:00.000Z\",\"label\":\"2e versement\",\"amount\":217000,\"charge_type\":\"payment\"},
+        {\"due_date\":\"2026-03-15T00:00:00.000Z\",\"label\":\"3e versement\",\"amount\":216000,\"charge_type\":\"payment\"}
+      ]}},
+      {\"name\":\"8 mensualités\",\"steps\":{\"$FM4_SUB\":[
+        {\"due_date\":\"2025-09-15T00:00:00.000Z\",\"label\":\"Mensualité 1\",\"amount\":81250,\"charge_type\":\"payment\"},
+        {\"due_date\":\"2025-10-15T00:00:00.000Z\",\"label\":\"Mensualité 2\",\"amount\":81250,\"charge_type\":\"payment\"},
+        {\"due_date\":\"2025-11-15T00:00:00.000Z\",\"label\":\"Mensualité 3\",\"amount\":81250,\"charge_type\":\"payment\"},
+        {\"due_date\":\"2025-12-15T00:00:00.000Z\",\"label\":\"Mensualité 4\",\"amount\":81250,\"charge_type\":\"payment\"},
+        {\"due_date\":\"2026-01-15T00:00:00.000Z\",\"label\":\"Mensualité 5\",\"amount\":81250,\"charge_type\":\"payment\"},
+        {\"due_date\":\"2026-02-15T00:00:00.000Z\",\"label\":\"Mensualité 6\",\"amount\":81250,\"charge_type\":\"payment\"},
+        {\"due_date\":\"2026-03-15T00:00:00.000Z\",\"label\":\"Mensualité 7\",\"amount\":81250,\"charge_type\":\"payment\"},
+        {\"due_date\":\"2026-04-15T00:00:00.000Z\",\"label\":\"Mensualité 8\",\"amount\":81250,\"charge_type\":\"payment\"}
+      ]}}
+    ]
+  }" > /dev/null
+
+# --- Formule 5 : Master Création (7800€) → Comptant / 3x / 10 mensualités ---
+echo "Formule $FM5: 3 échéanciers (comptant, 3x, 10 mensualités)"
+curl -s -X PATCH "$API/formulas/$FM5" \
+  -H "$KEY" -H 'Content-Type: application/json' \
+  -d "{
+    \"schedule_templates\": [
+      {\"name\":\"Paiement comptant\",\"steps\":{\"$FM5_SUB\":[
+        {\"due_date\":\"2025-09-15T00:00:00.000Z\",\"label\":\"Solde intégral\",\"amount\":780000,\"charge_type\":\"payment\"}
+      ]}},
+      {\"name\":\"Paiement en 3 fois\",\"steps\":{\"$FM5_SUB\":[
+        {\"due_date\":\"2025-09-15T00:00:00.000Z\",\"label\":\"1er versement\",\"amount\":260000,\"charge_type\":\"payment\"},
+        {\"due_date\":\"2025-12-15T00:00:00.000Z\",\"label\":\"2e versement\",\"amount\":260000,\"charge_type\":\"payment\"},
+        {\"due_date\":\"2026-03-15T00:00:00.000Z\",\"label\":\"3e versement\",\"amount\":260000,\"charge_type\":\"payment\"}
+      ]}},
+      {\"name\":\"10 mensualités\",\"steps\":{\"$FM5_SUB\":[
+        {\"due_date\":\"2025-09-15T00:00:00.000Z\",\"label\":\"Mensualité 1\",\"amount\":78000,\"charge_type\":\"payment\"},
+        {\"due_date\":\"2025-10-15T00:00:00.000Z\",\"label\":\"Mensualité 2\",\"amount\":78000,\"charge_type\":\"payment\"},
+        {\"due_date\":\"2025-11-15T00:00:00.000Z\",\"label\":\"Mensualité 3\",\"amount\":78000,\"charge_type\":\"payment\"},
+        {\"due_date\":\"2025-12-15T00:00:00.000Z\",\"label\":\"Mensualité 4\",\"amount\":78000,\"charge_type\":\"payment\"},
+        {\"due_date\":\"2026-01-15T00:00:00.000Z\",\"label\":\"Mensualité 5\",\"amount\":78000,\"charge_type\":\"payment\"},
+        {\"due_date\":\"2026-02-15T00:00:00.000Z\",\"label\":\"Mensualité 6\",\"amount\":78000,\"charge_type\":\"payment\"},
+        {\"due_date\":\"2026-03-15T00:00:00.000Z\",\"label\":\"Mensualité 7\",\"amount\":78000,\"charge_type\":\"payment\"},
+        {\"due_date\":\"2026-04-15T00:00:00.000Z\",\"label\":\"Mensualité 8\",\"amount\":78000,\"charge_type\":\"payment\"},
+        {\"due_date\":\"2026-05-15T00:00:00.000Z\",\"label\":\"Mensualité 9\",\"amount\":78000,\"charge_type\":\"payment\"},
+        {\"due_date\":\"2026-06-15T00:00:00.000Z\",\"label\":\"Mensualité 10\",\"amount\":78000,\"charge_type\":\"payment\"}
+      ]}}
+    ]
+  }" > /dev/null
+
+echo ""
+
+# =============================================================================
+# 5. REMISES ET FRAIS EXCEPTIONNELS
+# =============================================================================
+echo "=== Ajout des remises et frais exceptionnels ==="
+
+# --- Formule 1 : Licence Sciences ---
+echo "Formule $FM1: remises + frais"
+add_discount "$FM1" "Bourse au mérite" "fixed" 100000
+add_discount "$FM1" "Réduction paiement comptant" "variable" 5
+add_discount "$FM1" "Fratrie (-10%)" "variable" 10
+add_charge "$FM1" "Frais de matériel scientifique" "fixed" 35000
+
+# --- Formule 2 : Prépa Scientifique ---
+echo "Formule $FM2: remises + frais"
+add_discount "$FM2" "Réduction paiement anticipé" "fixed" 30000
+add_discount "$FM2" "Bourse excellence" "variable" 15
+add_charge "$FM2" "Manuels et supports de cours" "fixed" 15000
+
+# --- Formule 3 : Stage Recherche ---
+echo "Formule $FM3: remises + frais"
+add_discount "$FM3" "Étudiant de l établissement" "variable" 20
+add_charge "$FM3" "Équipement de laboratoire" "fixed" 12000
+
+# --- Formule 4 : Licence Arts ---
+echo "Formule $FM4: remises + frais"
+add_discount "$FM4" "Bourse talent artistique" "fixed" 80000
+add_discount "$FM4" "Réduction paiement comptant" "variable" 5
+add_discount "$FM4" "Fratrie (-10%)" "variable" 10
+add_charge "$FM4" "Fournitures artistiques" "fixed" 25000
+add_charge "$FM4" "Accès ateliers spécialisés" "fixed" 18000
+
+# --- Formule 5 : Master Création ---
+echo "Formule $FM5: remises + frais"
+add_discount "$FM5" "Bourse recherche création" "fixed" 150000
+add_discount "$FM5" "Ancien étudiant Licence" "variable" 10
+add_discount "$FM5" "Réduction paiement comptant" "variable" 5
+add_charge "$FM5" "Matériel studio" "fixed" 30000
 
 echo ""
 echo "=== DONE ==="
 echo ""
 echo "Résumé :"
 echo "  9 formations créées"
-echo "  5 formules créées avec 8 sets au total"
-echo ""
-echo "Cas couverts :"
-echo "  - Formation sur 2 ans : Formule $FM1 (Licence Sciences L2-L3)"
-echo "  - Formule en 2 trimestres : Formule $FM2 (Prépa T1 + T2)"
-echo "  - Stage commercialisé : Formule $FM3 (is_salable=true)"
-echo "  - Stage en option : Formule $FM5 Set Options (Stage Recherche Création)"
+echo "  5 formules créées avec 8 sets"
+echo "  5 parcours d'inscription (3-4 étapes chacun)"
+echo "  12 échéanciers de paiement"
+echo "  13 remises et 6 frais exceptionnels"
