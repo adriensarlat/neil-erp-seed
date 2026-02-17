@@ -8,7 +8,7 @@ Scripts de génération de données de démonstration pour l'ERP Neil.
 |--------|-------------|
 | `seed_neil.sh` | Création des écoles, campus, centres d'activité, salles, sociétés, niveaux et liaisons |
 | `seed_formulas.sh` | Création des formations et formules avec sets, étapes, échéanciers, remises |
-| `seed_teaching_units.sh` | Création des UE et modules dans chaque formation |
+| `seed_teaching_units.py` | Création des UE, sous-UE et modules (cours 1h/2h/4h) dans chaque formation |
 | `seed_students.py` | Génération de 200 étudiants avec données complètes et photos de profil |
 
 ## Données générées
@@ -20,7 +20,7 @@ Scripts de génération de données de démonstration pour l'ERP Neil.
 - **6 niveaux** : Prépa, L1, L2, L3, M1, M2
 - **9 formations** : tronc commun, trimestres, stages, ateliers, workshops
 - **5 formules** : avec 8 sets liant formules et formations
-- **33 UE et 76 modules** : structure pédagogique complète par formation
+- **31 UE, 65 sous-UE et 1042 modules** : structure pédagogique complète (chaque module = cours de 1h, 2h ou 4h, total = durée de la formation)
 - **200 étudiants** : avec noms, emails, dates de naissance, adresses, n° sécu, photos de profil, répartis sur les deux écoles (dont 20 en double cursus)
 
 ### Formules & Formations
@@ -49,8 +49,8 @@ bash seed_neil.sh
 # 2. Formations et formules
 bash seed_formulas.sh
 
-# 3. Unités d'enseignement et modules
-bash seed_teaching_units.sh
+# 3. Unités d'enseignement, sous-UE et modules
+python3 seed_teaching_units.py
 
 # 4. Étudiants
 python3 seed_students.py
