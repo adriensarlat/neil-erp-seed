@@ -357,37 +357,37 @@ echo ""
 # =============================================================================
 echo "=== Ajout des remises et frais exceptionnels ==="
 
-# --- Formule 1 : Licence Sciences ---
+# --- Formule 1 : Licence Sciences (8500€) ---
 echo "Formule $FM1: remises + frais"
 add_discount "$FM1" "Bourse au mérite" "fixed" 100000
-add_discount "$FM1" "Réduction paiement comptant" "variable" 5
-add_discount "$FM1" "Fratrie (-10%)" "variable" 10
+add_discount "$FM1" "Réduction paiement comptant (-5%)" "fixed" 42500
+add_discount "$FM1" "Fratrie" "fixed" 85000
 add_charge "$FM1" "Frais de matériel scientifique" "fixed" 35000
 
-# --- Formule 2 : Prépa Scientifique ---
+# --- Formule 2 : Prépa Scientifique (4500€) ---
 echo "Formule $FM2: remises + frais"
 add_discount "$FM2" "Réduction paiement anticipé" "fixed" 30000
-add_discount "$FM2" "Bourse excellence" "variable" 15
+add_discount "$FM2" "Bourse excellence" "fixed" 67500
 add_charge "$FM2" "Manuels et supports de cours" "fixed" 15000
 
-# --- Formule 3 : Stage Recherche ---
+# --- Formule 3 : Stage Recherche (1800€) ---
 echo "Formule $FM3: remises + frais"
-add_discount "$FM3" "Étudiant de l établissement" "variable" 20
+add_discount "$FM3" "Étudiant de l établissement" "fixed" 36000
 add_charge "$FM3" "Équipement de laboratoire" "fixed" 12000
 
-# --- Formule 4 : Licence Arts ---
+# --- Formule 4 : Licence Arts (6500€) ---
 echo "Formule $FM4: remises + frais"
 add_discount "$FM4" "Bourse talent artistique" "fixed" 80000
-add_discount "$FM4" "Réduction paiement comptant" "variable" 5
-add_discount "$FM4" "Fratrie (-10%)" "variable" 10
+add_discount "$FM4" "Réduction paiement comptant (-5%)" "fixed" 32500
+add_discount "$FM4" "Fratrie" "fixed" 65000
 add_charge "$FM4" "Fournitures artistiques" "fixed" 25000
 add_charge "$FM4" "Accès ateliers spécialisés" "fixed" 18000
 
-# --- Formule 5 : Master Création ---
+# --- Formule 5 : Master Création (7800€) ---
 echo "Formule $FM5: remises + frais"
 add_discount "$FM5" "Bourse recherche création" "fixed" 150000
-add_discount "$FM5" "Ancien étudiant Licence" "variable" 10
-add_discount "$FM5" "Réduction paiement comptant" "variable" 5
+add_discount "$FM5" "Ancien étudiant Licence" "fixed" 78000
+add_discount "$FM5" "Réduction paiement comptant (-5%)" "fixed" 39000
 add_charge "$FM5" "Matériel studio" "fixed" 30000
 
 echo ""
