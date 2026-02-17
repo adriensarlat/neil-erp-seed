@@ -162,7 +162,9 @@ def generate_modules(courses, target_hours):
     """
     Given a list of course names and a target total hours,
     generate modules of 1h, 2h, or 4h to fill the hours.
-    Courses are repeated as sessions (Séance 1, Séance 2, ...) if needed.
+    When a course needs multiple slots, uses pedagogical labels:
+    Cours 1, Cours 2... for regular courses; TP 1, TP 2... for TP courses;
+    TD 1, TD 2... for TD courses.
     """
     n_courses = len(courses)
     if n_courses == 0:
@@ -194,12 +196,30 @@ def generate_modules(courses, target_hours):
             remaining -= h
             session_num += 1
 
-        # Name sessions
+        # Name sessions with pedagogical labels
         if len(sessions) == 1:
             modules.append((course, sessions[0][1]))
         else:
+            # Determine label based on course name prefix
+            lower = course.lower()
+            if lower.startswith("tp "):
+                label = "TP"
+            elif lower.startswith("td "):
+                label = "TD"
+            elif lower.startswith("projet"):
+                label = "Projet"
+            elif lower.startswith("atelier"):
+                label = "Atelier"
+            elif lower.startswith("stage") or lower.startswith("résidence"):
+                label = "Journée"
+            elif lower.startswith("concours"):
+                label = "Session"
+            elif lower.startswith("colles"):
+                label = "Colle"
+            else:
+                label = "Cours"
             for num, h in sessions:
-                modules.append((f"{course} — Séance {num}", h))
+                modules.append((f"{course} — {label} {num}", h))
 
     return modules
 
