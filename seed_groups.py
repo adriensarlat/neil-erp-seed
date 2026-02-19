@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
 """
 seed_groups.py — Création des ensembles de classes et classes par formation.
-Affecte les étudiants inscrits définitivement aux différentes classes.
+Affecte les étudiants inscrits aux différentes classes.
 
-Logique d'affectation :
-- Récupère les étudiants inscrits définitivement par formule
-- Résout la correspondance formule → set → formation en tenant compte du min/max
-  - Sets obligatoires (min=max=1) : tous les étudiants de la formule
-  - Sets optionnels (min<max) : répartition aléatoire réaliste
-- Adapte la structure des groupes à l'effectif réel de chaque formation
+Prérequis : seed_enrollments.py doit avoir été exécuté (avec affectation formations).
+Les étudiants sont récupérés directement via GET /formations/{id}/students.
 
 Structure des groupes :
 - Grandes formations (40+) : Classes CM + Groupes TD + Groupes TP
@@ -38,21 +34,11 @@ COLORS = [
 # API helpers
 # ============================================================================
 
-def get_formula_students(formula_id):
-    """Get all students enrolled at the final step (inscrits définitivement)."""
-    r = requests.get(f"{API}/formulas/{formula_id}/students", headers=HEADERS)
+def get_formation_students(formation_id):
+    """Get all students assigned to a formation (via formula sets)."""
+    r = requests.get(f"{API}/formations/{formation_id}/students", headers=HEADERS)
     data = r.json()
-    inscrits = []
-    for step in data["step_students"]:
-        if step.get("is_subscription"):
-            inscrits = [s["id"] for s in step.get("students", [])]
-    return inscrits
-
-
-def get_formula_sets(formula_id):
-    """Get the sets (with formations) for a formula."""
-    r = requests.get(f"{API}/formulas/{formula_id}/sets", headers=HEADERS)
-    return r.json().get("sets", [])
+    return [s["id"] for s in data.get("students", [])]
 
 
 def get_existing_group_sets(formation_id):
@@ -114,76 +100,13 @@ def split_students(student_ids, n_groups):
     return groups
 
 
-# ============================================================================
-# Resolve students per formation from formula sets
-# ============================================================================
-
-def resolve_formation_students():
-    """
-    For each formation, determine which students are actually enrolled,
-    based on formula sets min/max logic.
-
-    Returns dict: formation_id -> list of student_ids
-    """
+def fetch_all_formation_students():
+    """Fetch students for all formations (10-18) directly from the API."""
     formation_students = {}
-
-    # Formula -> sets mapping
-    # FM2 -> Set1(F10, min1/max1)
-    # FM3 -> Set2(F11, 1/1), Set3(F12, 1/1)
-    # FM4 -> Set4(F13, 1/1)
-    # FM5 -> Set5(F14, 1/1), Set6(F15, 1/1)
-    # FM6 -> Set7(F16, 1/1), Set8(F17+F18, min1/max2)
-
-    for fm_id in [2, 3, 4, 5, 6]:
-        students = get_formula_students(fm_id)
-        sets = get_formula_sets(fm_id)
-
-        print(f"  FM{fm_id}: {len(students)} inscrits définitivement, {len(sets)} sets")
-
-        for s in sets:
-            set_min = s.get("min", 1)
-            set_max = s.get("max", 1)
-            formations = [f["id"] for f in s.get("formations", [])]
-
-            if set_min == set_max == 1 and len(formations) == 1:
-                # Obligatoire, une seule formation : tous les étudiants
-                fid = formations[0]
-                formation_students[fid] = list(students)
-                print(f"    Set '{s['name']}' (obligatoire) → F{fid}: {len(students)} étudiants")
-
-            elif set_max > 1 and len(formations) > 1:
-                # Set optionnel avec choix (ex: FM6 Options min:1, max:2)
-                # Répartition réaliste :
-                # ~60% prennent toutes les options (max)
-                # ~40% restants répartis aléatoirement sur une seule option
-                shuffled = list(students)
-                random.shuffle(shuffled)
-
-                n_both = int(len(shuffled) * 0.60)
-                rest = shuffled[n_both:]
-
-                # Initialiser les listes
-                for fid in formations:
-                    formation_students.setdefault(fid, [])
-
-                # 60% dans toutes les formations du set
-                for fid in formations:
-                    formation_students[fid].extend(shuffled[:n_both])
-
-                # 40% restants : chacun choisit une option aléatoire
-                for sid in rest:
-                    chosen = random.choice(formations)
-                    formation_students[chosen].append(sid)
-
-                for fid in formations:
-                    print(f"    Set '{s['name']}' (optionnel, {set_min}-{set_max}) → F{fid}: {len(formation_students[fid])} étudiants")
-
-            elif len(formations) == 1:
-                # Obligatoire avec une seule formation (même si min!=max, tous y vont)
-                fid = formations[0]
-                formation_students[fid] = list(students)
-                print(f"    Set '{s['name']}' → F{fid}: {len(students)} étudiants")
-
+    for fid in range(10, 19):
+        students = get_formation_students(fid)
+        formation_students[fid] = students
+        print(f"  F{fid}: {len(students)} étudiants")
     return formation_students
 
 
@@ -315,12 +238,8 @@ def build_group_plan(formation_students):
 # ============================================================================
 
 def seed_groups():
-    print("=== RÉSOLUTION DES ÉTUDIANTS PAR FORMATION ===")
-    formation_students = resolve_formation_students()
-
-    print(f"\n=== EFFECTIFS PAR FORMATION ===")
-    for fid in sorted(formation_students.keys()):
-        print(f"  F{fid}: {len(formation_students[fid])} étudiants")
+    print("=== RÉCUPÉRATION DES ÉTUDIANTS PAR FORMATION ===")
+    formation_students = fetch_all_formation_students()
 
     plan = build_group_plan(formation_students)
     color_idx = 0

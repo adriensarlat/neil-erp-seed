@@ -7,6 +7,11 @@ Répartition :
 - Reste réparti sur les étapes intermédiaires
 - Certains inscrits avec réduction, d'autres sans
 
+Affectation aux formations :
+- Chaque formule a des sets liant vers des formations
+- Sets obligatoires (min=max=1) : toutes les formations du set
+- Sets optionnels (min<max) : choix aléatoire réaliste (~60% max, ~40% une seule)
+
 Formules par école :
 - S&T (school=2) : FM2 Licence Sciences, FM3 Prépa Scientifique, FM4 Stage Labo
 - A&L (school=3) : FM5 Licence Arts, FM6 Master Création
@@ -36,30 +41,48 @@ FORMULAS = {
         "name": "Licence Sciences — Cycle L2-L3",
         "steps": [12, 13, 14],  # Candidature → Admission → Inscription définitive
         "discounts": [2, 3, 4],  # Bourse mérite, Paiement comptant, Fratrie
+        "sets": [
+            {"set_id": 1, "formations": [10], "min": 1, "max": 1},
+        ],
     },
     3: {  # FM3: Prépa Scientifique
         "id": 3,
         "name": "Prépa Scientifique Intensive",
         "steps": [15, 16, 17],  # Candidature → Confirmation → Inscription
         "discounts": [5, 6],  # Paiement anticipé, Bourse excellence
+        "sets": [
+            {"set_id": 2, "formations": [11], "min": 1, "max": 1},
+            {"set_id": 3, "formations": [12], "min": 1, "max": 1},
+        ],
     },
     4: {  # FM4: Stage Recherche
         "id": 4,
         "name": "Stage Recherche en Laboratoire",
         "steps": [18, 19, 20],  # Pré-inscription → Validation → Inscription
         "discounts": [7],  # Étudiant établissement
+        "sets": [
+            {"set_id": 4, "formations": [13], "min": 1, "max": 1},
+        ],
     },
     5: {  # FM5: Licence Arts
         "id": 5,
         "name": "Licence Arts Plastiques",
         "steps": [21, 22, 23],  # Candidature → Jury → Inscription
         "discounts": [8, 9, 10],  # Bourse talent, Paiement comptant, Fratrie
+        "sets": [
+            {"set_id": 5, "formations": [14], "min": 1, "max": 1},
+            {"set_id": 6, "formations": [15], "min": 1, "max": 1},
+        ],
     },
     6: {  # FM6: Master Création
         "id": 6,
         "name": "Master Création Contemporaine",
         "steps": [24, 25, 26, 27],  # Candidature → Entretien → Choix options → Inscription
         "discounts": [11, 12, 13],  # Bourse recherche, Ancien étudiant, Paiement comptant
+        "sets": [
+            {"set_id": 7, "formations": [16], "min": 1, "max": 1},
+            {"set_id": 8, "formations": [17, 18], "min": 1, "max": 2},
+        ],
     },
 }
 
@@ -117,6 +140,36 @@ def add_discount(student_id, sf_id, formula_discount_id):
     return r.status_code in (200, 201)
 
 
+def assign_formations(student_id, sf_id, formula):
+    """Assign student to formations based on formula sets.
+    - Obligatory sets (min=max=1, 1 formation): all formations
+    - Optional sets (min<max, multiple formations): random choice
+      ~60% take all options, ~40% take one random option
+    """
+    sets_payload = []
+    for s in formula["sets"]:
+        if s["min"] == s["max"] == 1 and len(s["formations"]) == 1:
+            # Obligatory: assign to the single formation
+            sets_payload.append({"set_id": s["set_id"], "formations": s["formations"]})
+        elif s["max"] > 1 and len(s["formations"]) > 1:
+            # Optional: ~60% take all, ~40% take one
+            if random.random() < 0.60:
+                sets_payload.append({"set_id": s["set_id"], "formations": s["formations"]})
+            else:
+                chosen = [random.choice(s["formations"])]
+                sets_payload.append({"set_id": s["set_id"], "formations": chosen})
+        else:
+            # Default: all formations in the set
+            sets_payload.append({"set_id": s["set_id"], "formations": s["formations"]})
+
+    r = requests.patch(
+        f"{API}/students/{student_id}/formulas/{sf_id}",
+        headers=HEADERS,
+        json={"sets": sets_payload},
+    )
+    return r.status_code in (200, 201)
+
+
 # ============================================================================
 # Main enrollment logic
 # ============================================================================
@@ -170,6 +223,9 @@ def enroll_students():
         sf_id = enroll_student(sid, fm_id)
         if sf_id is None:
             return False
+
+        # Assign formations from sets
+        assign_formations(sid, sf_id, fm)
 
         # Advance through steps up to target
         for step_idx in range(1, target_step_idx + 1):

@@ -32,6 +32,8 @@ Scripts de seed pour l'instance de démo Neil ERP. L'objectif est de remplir l'E
 - Création ensemble : `POST /formations/{fid}/group-sets` avec `{"name": "..."}`
 - Affectation étudiants : `POST /formations/{fid}/groups/{gid}/students` avec `{"students": [{"student_id": N}]}`
 - Chaque formation a un ensemble par défaut "Ensemble de classes par défaut" (renommable via PATCH)
+- Affectation formations : `PATCH /students/{id}/formulas/{sf_id}` avec `{"sets": [{"set_id": N, "formations": [N]}]}`
+- Les sets persistent : pas besoin de les renvoyer lors des PATCH suivants (step, discount)
 
 ## Données actuelles sur l'ERP
 
@@ -85,21 +87,26 @@ Scripts de seed pour l'instance de démo Neil ERP. L'objectif est de remplir l'E
 - 31 UEs, 65 sous-UEs, 1042 modules (cours de 1h, 2h ou 4h)
 - Total = durée de chaque formation
 
+### Affectation aux formations
+- Inscription formule → affectation formations via `PATCH /students/{id}/formulas/{sf_id}` avec `{"sets": [{"set_id": N, "formations": [N]}]}`
+- Sets obligatoires (min=max=1) : toutes les formations
+- FM6 Set Options (min:1, max:2) : ~60% prennent F17+F18, ~40% une seule option
+- Effectifs par formation : F10:61, F11:38, F12:38, F13:21, F14:59, F15:59, F16:41, F17:32, F18:30
+
 ### Classes et groupes (16 ensembles, 38 classes)
-Affectation basée sur les sets des formules (obligatoire vs optionnel).
-FM6 Set Options (min:1, max:2) : ~60% prennent F17+F18, ~40% une seule option.
+Basés sur les étudiants réellement affectés aux formations (GET /formations/{id}/students).
 
 | Formation | Ensembles | Classes |
 |-----------|-----------|---------|
-| F10 (43 étu.) | Classes (GS10), Groupes de TD (GS27), Groupes de TP (GS28) | Classe A (40), Classe B (41), TD 1-3 (42-44), TP 1-4 (45-48) |
-| F11 (25 étu.) | Classe (GS11), Groupes de TD (GS29) | Prépa T1 (49), TD 1-2 (50-51) |
-| F12 (25 étu.) | Classe (GS12), Groupes de TD (GS30) | Prépa T2 (52), TD 1-2 (53-54) |
-| F13 (10 étu.) | Groupes de laboratoire (GS13) | Labo Physique (55), Labo Chimie (56) |
-| F14 (41 étu.) | Classes (GS14), Groupes de TD (GS31) | Classe A (57), Classe B (58), TD 1-3 (59-61) |
-| F15 (41 étu.) | Ateliers (GS15), Groupes de TP (GS32) | Atelier Dessin-Peinture (62), Sculpture-Volume (63), Arts numériques (64), TP 1-4 (65-68) |
-| F16 (28 étu.) | Promotion (GS16), Ateliers de création (GS33) | Master 1 Création (69), Arts visuels (70), Arts vivants (71) |
-| F17 (22 étu.) | Groupes de projet (GS17) | Projet Installation (72), Performance (73), Numérique (74) |
-| F18 (22 étu.) | Groupes de recherche (GS18) | Recherche Matériaux (75), Image (76), Son-Espace (77) |
+| F10 (61 étu.) | Classes (GS10), Groupes de TD (GS34), Groupes de TP (GS35) | Classe A (78), Classe B (79), TD 1-3 (80-82), TP 1-4 (83-86) |
+| F11 (38 étu.) | Classe (GS11), Groupes de TD (GS36) | Prépa T1 (87), TD 1-2 (88-89) |
+| F12 (38 étu.) | Classe (GS12), Groupes de TD (GS37) | Prépa T2 (90), TD 1-2 (91-92) |
+| F13 (21 étu.) | Groupes de laboratoire (GS13) | Labo Physique (93), Labo Chimie (94) |
+| F14 (59 étu.) | Classes (GS14), Groupes de TD (GS38) | Classe A (95), Classe B (96), TD 1-3 (97-99) |
+| F15 (59 étu.) | Ateliers (GS15), Groupes de TP (GS39) | Atelier Dessin-Peinture (100), Sculpture-Volume (101), Arts numériques (102), TP 1-4 (103-106) |
+| F16 (41 étu.) | Promotion (GS16), Ateliers de création (GS40) | Master 1 Création (107), Arts visuels (108), Arts vivants (109) |
+| F17 (32 étu.) | Groupes de projet (GS17) | Projet Installation (110), Performance (111), Numérique (112) |
+| F18 (30 étu.) | Groupes de recherche (GS18) | Recherche Matériaux (113), Image (114), Son-Espace (115) |
 
 ## Conventions
 
