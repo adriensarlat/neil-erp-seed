@@ -86,17 +86,20 @@ Scripts de seed pour l'instance de démo Neil ERP. L'objectif est de remplir l'E
 - Total = durée de chaque formation
 
 ### Classes et groupes (16 ensembles, 38 classes)
+Affectation basée sur les sets des formules (obligatoire vs optionnel).
+FM6 Set Options (min:1, max:2) : ~60% prennent F17+F18, ~40% une seule option.
+
 | Formation | Ensembles | Classes |
 |-----------|-----------|---------|
-| F10 (43 étu.) | Classes (GS10), Groupes de TD (GS20), Groupes de TP (GS21) | Classe A (2), Classe B (3), TD 1-3 (4-6), TP 1-4 (7-10) |
-| F11 (25 étu.) | Classe (GS11), Groupes de TD (GS22) | Prépa T1 (11), TD 1-2 (12-13) |
-| F12 (25 étu.) | Classe (GS12), Groupes de TD (GS23) | Prépa T2 (14), TD 1-2 (15-16) |
-| F13 (10 étu.) | Groupes de laboratoire (GS13) | Labo Physique (17), Labo Chimie (18) |
-| F14 (41 étu.) | Classes (GS14), Groupes de TD (GS24) | Classe A (19), Classe B (20), TD 1-3 (21-23) |
-| F15 (41 étu.) | Ateliers (GS15), Groupes de TP (GS25) | Atelier Dessin-Peinture (24), Sculpture-Volume (25), Arts numériques (26), TP 1-4 (27-30) |
-| F16 (28 étu.) | Promotion (GS16), Ateliers de création (GS26) | Master 1 Création (31), Arts visuels (32), Arts vivants (33) |
-| F17 (28 étu.) | Groupes de projet (GS17) | Projet Installation (34), Performance (35), Numérique (36) |
-| F18 (28 étu.) | Groupes de recherche (GS18) | Recherche Matériaux (37), Image (38), Son-Espace (39) |
+| F10 (43 étu.) | Classes (GS10), Groupes de TD (GS27), Groupes de TP (GS28) | Classe A (40), Classe B (41), TD 1-3 (42-44), TP 1-4 (45-48) |
+| F11 (25 étu.) | Classe (GS11), Groupes de TD (GS29) | Prépa T1 (49), TD 1-2 (50-51) |
+| F12 (25 étu.) | Classe (GS12), Groupes de TD (GS30) | Prépa T2 (52), TD 1-2 (53-54) |
+| F13 (10 étu.) | Groupes de laboratoire (GS13) | Labo Physique (55), Labo Chimie (56) |
+| F14 (41 étu.) | Classes (GS14), Groupes de TD (GS31) | Classe A (57), Classe B (58), TD 1-3 (59-61) |
+| F15 (41 étu.) | Ateliers (GS15), Groupes de TP (GS32) | Atelier Dessin-Peinture (62), Sculpture-Volume (63), Arts numériques (64), TP 1-4 (65-68) |
+| F16 (28 étu.) | Promotion (GS16), Ateliers de création (GS33) | Master 1 Création (69), Arts visuels (70), Arts vivants (71) |
+| F17 (22 étu.) | Groupes de projet (GS17) | Projet Installation (72), Performance (73), Numérique (74) |
+| F18 (22 étu.) | Groupes de recherche (GS18) | Recherche Matériaux (75), Image (76), Son-Espace (77) |
 
 ## Conventions
 

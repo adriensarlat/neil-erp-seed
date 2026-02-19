@@ -3,7 +3,14 @@
 seed_groups.py — Création des ensembles de classes et classes par formation.
 Affecte les étudiants inscrits définitivement aux différentes classes.
 
-Structure :
+Logique d'affectation :
+- Récupère les étudiants inscrits définitivement par formule
+- Résout la correspondance formule → set → formation en tenant compte du min/max
+  - Sets obligatoires (min=max=1) : tous les étudiants de la formule
+  - Sets optionnels (min<max) : répartition aléatoire réaliste
+- Adapte la structure des groupes à l'effectif réel de chaque formation
+
+Structure des groupes :
 - Grandes formations (40+) : Classes CM + Groupes TD + Groupes TP
 - Formations moyennes (20-40) : Classe unique + Groupes TD/Atelier
 - Petites formations (<20) : Groupes spécialisés uniquement
@@ -40,6 +47,12 @@ def get_formula_students(formula_id):
         if step.get("is_subscription"):
             inscrits = [s["id"] for s in step.get("students", [])]
     return inscrits
+
+
+def get_formula_sets(formula_id):
+    """Get the sets (with formations) for a formula."""
+    r = requests.get(f"{API}/formulas/{formula_id}/sets", headers=HEADERS)
+    return r.json().get("sets", [])
 
 
 def get_existing_group_sets(formation_id):
@@ -102,140 +115,199 @@ def split_students(student_ids, n_groups):
 
 
 # ============================================================================
-# Formation group structures
+# Resolve students per formation from formula sets
 # ============================================================================
 
-def build_group_plan():
+def resolve_formation_students():
     """
-    Returns dict: formation_id -> list of group-sets.
-    Each group-set: {"name": str, "groups": [{"name": str, "capacity": int}]}
+    For each formation, determine which students are actually enrolled,
+    based on formula sets min/max logic.
+
+    Returns dict: formation_id -> list of student_ids
     """
-    return {
-        # F10: Tronc commun Sciences L2-L3 — 43 étudiants
-        10: {
-            "formula": 2,
-            "sets": [
+    formation_students = {}
+
+    # Formula -> sets mapping
+    # FM2 -> Set1(F10, min1/max1)
+    # FM3 -> Set2(F11, 1/1), Set3(F12, 1/1)
+    # FM4 -> Set4(F13, 1/1)
+    # FM5 -> Set5(F14, 1/1), Set6(F15, 1/1)
+    # FM6 -> Set7(F16, 1/1), Set8(F17+F18, min1/max2)
+
+    for fm_id in [2, 3, 4, 5, 6]:
+        students = get_formula_students(fm_id)
+        sets = get_formula_sets(fm_id)
+
+        print(f"  FM{fm_id}: {len(students)} inscrits définitivement, {len(sets)} sets")
+
+        for s in sets:
+            set_min = s.get("min", 1)
+            set_max = s.get("max", 1)
+            formations = [f["id"] for f in s.get("formations", [])]
+
+            if set_min == set_max == 1 and len(formations) == 1:
+                # Obligatoire, une seule formation : tous les étudiants
+                fid = formations[0]
+                formation_students[fid] = list(students)
+                print(f"    Set '{s['name']}' (obligatoire) → F{fid}: {len(students)} étudiants")
+
+            elif set_max > 1 and len(formations) > 1:
+                # Set optionnel avec choix (ex: FM6 Options min:1, max:2)
+                # Répartition réaliste :
+                # ~60% prennent toutes les options (max)
+                # ~40% restants répartis aléatoirement sur une seule option
+                shuffled = list(students)
+                random.shuffle(shuffled)
+
+                n_both = int(len(shuffled) * 0.60)
+                rest = shuffled[n_both:]
+
+                # Initialiser les listes
+                for fid in formations:
+                    formation_students.setdefault(fid, [])
+
+                # 60% dans toutes les formations du set
+                for fid in formations:
+                    formation_students[fid].extend(shuffled[:n_both])
+
+                # 40% restants : chacun choisit une option aléatoire
+                for sid in rest:
+                    chosen = random.choice(formations)
+                    formation_students[chosen].append(sid)
+
+                for fid in formations:
+                    print(f"    Set '{s['name']}' (optionnel, {set_min}-{set_max}) → F{fid}: {len(formation_students[fid])} étudiants")
+
+            elif len(formations) == 1:
+                # Obligatoire avec une seule formation (même si min!=max, tous y vont)
+                fid = formations[0]
+                formation_students[fid] = list(students)
+                print(f"    Set '{s['name']}' → F{fid}: {len(students)} étudiants")
+
+    return formation_students
+
+
+# ============================================================================
+# Formation group structures (adapted dynamically)
+# ============================================================================
+
+def build_group_plan(formation_students):
+    """
+    Build group structure per formation, adapted to actual student count.
+    """
+    plan = {}
+
+    for fid, students in sorted(formation_students.items()):
+        n = len(students)
+
+        if fid == 10:
+            # Tronc commun Sciences L2-L3
+            plan[fid] = {"sets": [
                 {"name": "Classes", "groups": [
-                    {"name": "Classe A", "capacity": 25},
-                    {"name": "Classe B", "capacity": 25},
+                    {"name": "Classe A", "capacity": (n // 2) + 2},
+                    {"name": "Classe B", "capacity": (n // 2) + 2},
                 ]},
                 {"name": "Groupes de TD", "groups": [
-                    {"name": "TD 1", "capacity": 15},
-                    {"name": "TD 2", "capacity": 15},
-                    {"name": "TD 3", "capacity": 15},
+                    {"name": "TD 1", "capacity": (n // 3) + 2},
+                    {"name": "TD 2", "capacity": (n // 3) + 2},
+                    {"name": "TD 3", "capacity": (n // 3) + 2},
                 ]},
                 {"name": "Groupes de TP", "groups": [
-                    {"name": "TP 1", "capacity": 12},
-                    {"name": "TP 2", "capacity": 12},
-                    {"name": "TP 3", "capacity": 12},
-                    {"name": "TP 4", "capacity": 12},
+                    {"name": "TP 1", "capacity": (n // 4) + 2},
+                    {"name": "TP 2", "capacity": (n // 4) + 2},
+                    {"name": "TP 3", "capacity": (n // 4) + 2},
+                    {"name": "TP 4", "capacity": (n // 4) + 2},
                 ]},
-            ],
-        },
-        # F11: Prépa T1 Fondamentaux — 25 étudiants
-        11: {
-            "formula": 3,
-            "sets": [
+            ]}
+
+        elif fid == 11:
+            plan[fid] = {"sets": [
                 {"name": "Classe", "groups": [
-                    {"name": "Prépa T1", "capacity": 30},
+                    {"name": "Prépa T1", "capacity": n + 5},
                 ]},
                 {"name": "Groupes de TD", "groups": [
-                    {"name": "TD 1", "capacity": 15},
-                    {"name": "TD 2", "capacity": 15},
+                    {"name": "TD 1", "capacity": (n // 2) + 2},
+                    {"name": "TD 2", "capacity": (n // 2) + 2},
                 ]},
-            ],
-        },
-        # F12: Prépa T2 Approfondissement — 25 étudiants
-        12: {
-            "formula": 3,
-            "sets": [
+            ]}
+
+        elif fid == 12:
+            plan[fid] = {"sets": [
                 {"name": "Classe", "groups": [
-                    {"name": "Prépa T2", "capacity": 30},
+                    {"name": "Prépa T2", "capacity": n + 5},
                 ]},
                 {"name": "Groupes de TD", "groups": [
-                    {"name": "TD 1", "capacity": 15},
-                    {"name": "TD 2", "capacity": 15},
+                    {"name": "TD 1", "capacity": (n // 2) + 2},
+                    {"name": "TD 2", "capacity": (n // 2) + 2},
                 ]},
-            ],
-        },
-        # F13: Stage Recherche Labo — 10 étudiants
-        13: {
-            "formula": 4,
-            "sets": [
+            ]}
+
+        elif fid == 13:
+            plan[fid] = {"sets": [
                 {"name": "Groupes de laboratoire", "groups": [
-                    {"name": "Labo Physique", "capacity": 6},
-                    {"name": "Labo Chimie", "capacity": 6},
+                    {"name": "Labo Physique", "capacity": (n // 2) + 2},
+                    {"name": "Labo Chimie", "capacity": (n // 2) + 2},
                 ]},
-            ],
-        },
-        # F14: Histoire de l'art — 41 étudiants
-        14: {
-            "formula": 5,
-            "sets": [
+            ]}
+
+        elif fid == 14:
+            plan[fid] = {"sets": [
                 {"name": "Classes", "groups": [
-                    {"name": "Classe A", "capacity": 25},
-                    {"name": "Classe B", "capacity": 25},
+                    {"name": "Classe A", "capacity": (n // 2) + 2},
+                    {"name": "Classe B", "capacity": (n // 2) + 2},
                 ]},
                 {"name": "Groupes de TD", "groups": [
-                    {"name": "TD 1", "capacity": 15},
-                    {"name": "TD 2", "capacity": 15},
-                    {"name": "TD 3", "capacity": 15},
+                    {"name": "TD 1", "capacity": (n // 3) + 2},
+                    {"name": "TD 2", "capacity": (n // 3) + 2},
+                    {"name": "TD 3", "capacity": (n // 3) + 2},
                 ]},
-            ],
-        },
-        # F15: Ateliers pratiques — 41 étudiants
-        15: {
-            "formula": 5,
-            "sets": [
+            ]}
+
+        elif fid == 15:
+            plan[fid] = {"sets": [
                 {"name": "Ateliers", "groups": [
-                    {"name": "Atelier Dessin-Peinture", "capacity": 15},
-                    {"name": "Atelier Sculpture-Volume", "capacity": 15},
-                    {"name": "Atelier Arts numériques", "capacity": 15},
+                    {"name": "Atelier Dessin-Peinture", "capacity": (n // 3) + 2},
+                    {"name": "Atelier Sculpture-Volume", "capacity": (n // 3) + 2},
+                    {"name": "Atelier Arts numériques", "capacity": (n // 3) + 2},
                 ]},
                 {"name": "Groupes de TP", "groups": [
-                    {"name": "TP 1", "capacity": 12},
-                    {"name": "TP 2", "capacity": 12},
-                    {"name": "TP 3", "capacity": 12},
-                    {"name": "TP 4", "capacity": 12},
+                    {"name": "TP 1", "capacity": (n // 4) + 2},
+                    {"name": "TP 2", "capacity": (n // 4) + 2},
+                    {"name": "TP 3", "capacity": (n // 4) + 2},
+                    {"name": "TP 4", "capacity": (n // 4) + 2},
                 ]},
-            ],
-        },
-        # F16: Master Création TC — 28 étudiants
-        16: {
-            "formula": 6,
-            "sets": [
+            ]}
+
+        elif fid == 16:
+            plan[fid] = {"sets": [
                 {"name": "Promotion", "groups": [
-                    {"name": "Master 1 Création", "capacity": 30},
+                    {"name": "Master 1 Création", "capacity": n + 5},
                 ]},
                 {"name": "Ateliers de création", "groups": [
-                    {"name": "Atelier Arts visuels", "capacity": 15},
-                    {"name": "Atelier Arts vivants", "capacity": 15},
+                    {"name": "Atelier Arts visuels", "capacity": (n // 2) + 2},
+                    {"name": "Atelier Arts vivants", "capacity": (n // 2) + 2},
                 ]},
-            ],
-        },
-        # F17: Workshop International — 28 étudiants
-        17: {
-            "formula": 6,
-            "sets": [
+            ]}
+
+        elif fid == 17:
+            plan[fid] = {"sets": [
                 {"name": "Groupes de projet", "groups": [
-                    {"name": "Projet Installation", "capacity": 10},
-                    {"name": "Projet Performance", "capacity": 10},
-                    {"name": "Projet Numérique", "capacity": 10},
+                    {"name": "Projet Installation", "capacity": (n // 3) + 2},
+                    {"name": "Projet Performance", "capacity": (n // 3) + 2},
+                    {"name": "Projet Numérique", "capacity": (n // 3) + 2},
                 ]},
-            ],
-        },
-        # F18: Stage Recherche Création — 28 étudiants
-        18: {
-            "formula": 6,
-            "sets": [
+            ]}
+
+        elif fid == 18:
+            plan[fid] = {"sets": [
                 {"name": "Groupes de recherche", "groups": [
-                    {"name": "Recherche Matériaux", "capacity": 10},
-                    {"name": "Recherche Image", "capacity": 10},
-                    {"name": "Recherche Son-Espace", "capacity": 10},
+                    {"name": "Recherche Matériaux", "capacity": (n // 3) + 2},
+                    {"name": "Recherche Image", "capacity": (n // 3) + 2},
+                    {"name": "Recherche Son-Espace", "capacity": (n // 3) + 2},
                 ]},
-            ],
-        },
-    }
+            ]}
+
+    return plan
 
 
 # ============================================================================
@@ -243,23 +315,22 @@ def build_group_plan():
 # ============================================================================
 
 def seed_groups():
-    plan = build_group_plan()
+    print("=== RÉSOLUTION DES ÉTUDIANTS PAR FORMATION ===")
+    formation_students = resolve_formation_students()
+
+    print(f"\n=== EFFECTIFS PAR FORMATION ===")
+    for fid in sorted(formation_students.keys()):
+        print(f"  F{fid}: {len(formation_students[fid])} étudiants")
+
+    plan = build_group_plan(formation_students)
     color_idx = 0
 
-    # Cache students per formula (avoid re-fetching)
-    formula_students = {}
-
-    print("=== CRÉATION DES CLASSES ===")
+    print("\n=== CRÉATION DES CLASSES ===")
     for fid in sorted(plan.keys()):
         config = plan[fid]
-        fm_id = config["formula"]
+        students = formation_students[fid]
 
-        # Get students
-        if fm_id not in formula_students:
-            formula_students[fm_id] = get_formula_students(fm_id)
-        students = formula_students[fm_id]
-
-        print(f"\nFormation {fid} ({len(students)} étudiants inscrits via FM{fm_id})")
+        print(f"\nFormation {fid} ({len(students)} étudiants)")
 
         # Get existing group-sets (rename default one for first set)
         existing_gs = get_existing_group_sets(fid)
