@@ -28,6 +28,10 @@ Scripts de seed pour l'instance de démo Neil ERP. L'objectif est de remplir l'E
 - Suppression module : `DELETE /formations/{fid}/modules/{module_id}` (module_id de l'array modules, pas node_id)
 - Suppression UE : `DELETE /formations/{fid}/teaching-units/{node_id}` (échoue si enfants existent)
 - Sous-UE : même endpoint que UE mais avec `parent_node_id`
+- Création groupe : `POST /formations/{fid}/groups` avec `{"groups": {"name", "group_set_id", "color", "capacity"}}` (retourne array)
+- Création ensemble : `POST /formations/{fid}/group-sets` avec `{"name": "..."}`
+- Affectation étudiants : `POST /formations/{fid}/groups/{gid}/students` avec `{"students": [{"student_id": N}]}`
+- Chaque formation a un ensemble par défaut "Ensemble de classes par défaut" (renommable via PATCH)
 
 ## Données actuelles sur l'ERP
 
@@ -81,6 +85,19 @@ Scripts de seed pour l'instance de démo Neil ERP. L'objectif est de remplir l'E
 - 31 UEs, 65 sous-UEs, 1042 modules (cours de 1h, 2h ou 4h)
 - Total = durée de chaque formation
 
+### Classes et groupes (16 ensembles, 38 classes)
+| Formation | Ensembles | Classes |
+|-----------|-----------|---------|
+| F10 (43 étu.) | Classes (GS10), Groupes de TD (GS20), Groupes de TP (GS21) | Classe A (2), Classe B (3), TD 1-3 (4-6), TP 1-4 (7-10) |
+| F11 (25 étu.) | Classe (GS11), Groupes de TD (GS22) | Prépa T1 (11), TD 1-2 (12-13) |
+| F12 (25 étu.) | Classe (GS12), Groupes de TD (GS23) | Prépa T2 (14), TD 1-2 (15-16) |
+| F13 (10 étu.) | Groupes de laboratoire (GS13) | Labo Physique (17), Labo Chimie (18) |
+| F14 (41 étu.) | Classes (GS14), Groupes de TD (GS24) | Classe A (19), Classe B (20), TD 1-3 (21-23) |
+| F15 (41 étu.) | Ateliers (GS15), Groupes de TP (GS25) | Atelier Dessin-Peinture (24), Sculpture-Volume (25), Arts numériques (26), TP 1-4 (27-30) |
+| F16 (28 étu.) | Promotion (GS16), Ateliers de création (GS26) | Master 1 Création (31), Arts visuels (32), Arts vivants (33) |
+| F17 (28 étu.) | Groupes de projet (GS17) | Projet Installation (34), Performance (35), Numérique (36) |
+| F18 (28 étu.) | Groupes de recherche (GS18) | Recherche Matériaux (37), Image (38), Son-Espace (39) |
+
 ## Conventions
 
 - **Langue** : noms et données en français
@@ -99,4 +116,5 @@ bash seed_formulas.sh          # 2. Formations et formules
 python3 seed_teaching_units.py # 3. UE et modules
 python3 seed_students.py       # 4. Étudiants
 python3 seed_enrollments.py    # 5. Inscriptions
+python3 seed_groups.py         # 6. Classes et groupes
 ```
